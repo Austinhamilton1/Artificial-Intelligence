@@ -43,6 +43,15 @@ class Graph:
                 current_list.remove(node)
                 path.append(node)
         return path
+    
+    def density(self):
+        if len(self.nodes) == 0:
+            return 0
+        sum = 0
+        for node1 in self.nodes:
+            for node2 in self.nodes:
+                sum += math.sqrt((node1.x - node2.x)**2 + (node1.y - node2.y)**2)
+        return sum / len(self.nodes)
 
     @staticmethod        
     def length(path):
@@ -98,6 +107,9 @@ class BruteForce(Solver):
                 self.min_path = copy.deepcopy(path)
             return path
         raise StopIteration
+
+    def __str__(self):
+        return 'Brute Force'
     
 class Annealing(Solver):
     '''
@@ -168,6 +180,51 @@ class Annealing(Solver):
         '''
         self.temp *= 0.99
 
+    def __str__(self):
+        return 'Simulated Annealing'
+
+class Test:
+    def __init__(self, screen, *args, log_file='results.txt'):
+        self.screen = screen
+        self.agents = args
+        self.i = 0
+        self.log_file = log_file
+
+    def run(self):
+        done = False
+        self.screen.show_text(f'Nodes: {len(self.screen.graph.nodes)}', 150)
+        if self.i >= len(self.agents):
+            self.screen.draw_graph(self.screen.graph)
+            self.screen.show_text('End of test.', 100)
+            self.screen.show_text(f'Results added to {self.log_file}', 50)
+            return
+        self.screen.show_text(f'Current Min: {self.agents[self.i].min_distance}', 100)
+        self.screen.show_text(f'Time to Solve: {self.agents[self.i].time / 1000} s', 50)
+        try:
+            path = next(self.agents[self.i].iter)
+            self.screen.draw_graph(self.screen.graph, path)
+            self.agents[self.i].time += self.screen.clock.get_time()
+        except StopIteration:
+            self.screen.draw_graph(self.screen.graph, self.agents[self.i].min_path)
+            with open(self.log_file, 'a') as log:
+                log.write(str(self) + '\n')
+            print(str(self))
+            self.i += 1
+            done = True
+        return done
+
+    def __str__(self):
+        message = f'''
+        {'-' * 50}
+        Type:\t\t{str(self.agents[self.i])}
+        Num Nodes:\t{len(self.screen.graph.nodes)}
+        Density:\t{self.screen.graph.density()}
+        Time:\t\t{self.agents[self.i].time}
+        Min Distance:\t{self.agents[self.i].min_distance}
+        {'-' * 50}
+        '''
+        return message
+
 class Screen:
     '''
     Screen is the representation of the pygame display object and some functions for it
@@ -176,20 +233,15 @@ class Screen:
         #initialize the screen itself
         pygame.init()
         #the extra 50 is for text like shortest path, time, etc. to go
-        self.screen = pygame.display.set_mode((width, height + 100))
+        self.screen = pygame.display.set_mode((width, height + 150))
         self.clock = pygame.time.Clock()
         #create the associated graph
         self.graph = Graph()
         #we'll use this to write to the window
         pygame.font.init()
         self.font = pygame.font.SysFont('Calibri', 30)
-    def loop(self, bruteforce=False, annealing=False):
-        if bruteforce:
-            #create a BruteForce object to solve for the optimal path
-            self.solver = BruteForce(self.graph)
-        elif annealing:
-            #create an Annealing object to approximate the optimal path
-            self.solver = Annealing(self.graph)
+    def loop(self, test):
+        self.tester = test
         while True:
             #poll for events caused by the user
             for event in pygame.event.get():
@@ -204,10 +256,13 @@ class Screen:
             #fill the screen to "clear" it
             self.screen.fill('white')
 
-            self.solve()
-            
+            done = self.tester.run()
+
             #push the drawings from the buffer to the screen
             pygame.display.flip()
+
+            if done:
+                pygame.time.wait(5000)
 
             #limit the game to 60 FPS
             self.clock.tick(60)
@@ -225,7 +280,7 @@ class Screen:
         #this would be close to the theoretical maximum
         #if the screen is a square/rectangle, the most efficient packing would be a lattice
         #there will be a max of sqrt(nodes) along the shortest side, so that's how big it could possibly be
-        t_max = min(size[0], size[1] - 100) / math.sqrt(num_nodes)
+        t_max = min(size[0], size[1] - 150) / math.sqrt(num_nodes)
         #0.75 is not a mathematically derived number, it's just a error factor that seemed to work
         #in all the cases I used
         if min_distance > 0.75 * t_max:
@@ -235,7 +290,7 @@ class Screen:
         #the other nodes and checking to make sure it is at least min_distance away
         while len(self.graph.nodes) < num_nodes:
             x = random.randint(10, size[0] - 10)
-            y = random.randint(10, size[1] - 130)
+            y = random.randint(10, size[1] - 180)
             is_valid = True
             for node in self.graph.nodes:
                 distance = math.sqrt((node.x - x)**2 + (node.y - y)**2)
@@ -254,7 +309,7 @@ class Screen:
             for node in graph.nodes:
                 node.draw(self.screen)
 
-        if len(path) > 0:
+        if path is not None and len(path) > 0:
             for i in range(len(path)):
                 start = path[i]
                 #modding by len(graph.path) makes sure the last node is connected to the first
@@ -271,22 +326,9 @@ class Screen:
         height = pygame.display.get_window_size()[1]
         self.screen.blit(surface, (0, height - offset))
 
-    def solve(self):
-        '''
-        solve either finds or approximates the shortest path using one of the techniques in
-        the parameter list
-        bruteforce -> bool: solve with brute force
-        annealing -> bool: approximate with annealing
-        '''
-        try:
-            path = next(self.solver.iter)
-            self.draw_graph(self.graph, path)
-            self.solver.time += self.clock.get_time()
-        except StopIteration:
-            self.draw_graph(self.graph, self.solver.min_path)
-        self.show_text(f'Current Min: {self.solver.min_distance}', 100)
-        self.show_text(f'Time to Solve: {self.solver.time / 1000} s', 50)
+    
 
 s = Screen()
-s.populate_screen(6, 10)
-s.loop(annealing=True)
+s.populate_screen(5, 10)
+test = Test(s, BruteForce(s.graph), Annealing(s.graph))
+s.loop(test=test)
