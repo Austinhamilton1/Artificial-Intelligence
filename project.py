@@ -3,6 +3,7 @@ import random
 import copy
 import math
 from itertools import permutations
+import numpy as np
 
 class Node:
     '''
@@ -43,15 +44,35 @@ class Graph:
                 current_list.remove(node)
                 path.append(node)
         return path
-    
+
+    def short_heuristic(self):
+        pool = copy.deepcopy(self.nodes)
+        path = []
+        start = random.choice(pool)
+        pool.remove(start)
+        path.append(start)
+        while len(pool) > 0:
+            min_distance = math.inf
+            node = None
+            for possible in pool:
+                distance = self.distance(possible, path[-1])
+                if distance < min_distance:
+                    node = possible
+            path.append(node)
+            pool.remove(node)
+
     def density(self):
         if len(self.nodes) == 0:
             return 0
         sum = 0
         for node1 in self.nodes:
             for node2 in self.nodes:
-                sum += math.sqrt((node1.x - node2.x)**2 + (node1.y - node2.y)**2)
+                sum += self.distance(node1, node2)
         return sum / len(self.nodes)
+    
+    @staticmethod
+    def distance(node1, node2):
+        return math.sqrt((node1.x - node2.x)**2 + (node1.y - node2.y)**2)
 
     @staticmethod        
     def length(path):
@@ -65,7 +86,7 @@ class Graph:
             start = path[i]
             #the mod makes sure the last node is connected to the first
             end = path[(i + 1) % len(path)]
-            distance = math.sqrt((start.x - end.x)**2 + (start.y - end.y)**2)
+            distance = Graph.distance(start, end)
             length += distance
         return length
 
@@ -182,6 +203,22 @@ class Annealing(Solver):
 
     def __str__(self):
         return 'Simulated Annealing'
+
+class AntColony(Solver):
+    def __init__(self, graph, num_ants):
+        self.graph = graph
+        self.alpha = 1
+        self.beta = 3
+        self.p = 0.5
+        self.m = num_ants
+        t0 = (2 * self.m) / self.p * Graph.length(self.graph.short_heuristic())
+        self.t = np.full((len(self.graph.nodes), len(self.graph.nodes)), t0)
+        super(AntColony, self).__init__(self)
+
+class Ant:
+    def __init__(self, colony, start):
+        self.colony = colony
+        self.start = start
 
 class Test:
     def __init__(self, screen, *args, log_file='results.txt'):
